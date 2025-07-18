@@ -80,7 +80,11 @@ private:
   constexpr static uint noise_adcs = 6;
   constexpr static uint n_adcs = 4;
   uint32_t adcs[2][n_adcs] = {};
-  constexpr static uint n_all = n_knobs + n_switches + n_adcs;
+  constexpr static uint noise_pulses = 0;
+  constexpr static uint n_pulses = 1;
+  bool pulses[2][n_pulses] = {};
+
+  constexpr static uint n_all = n_knobs + n_switches + n_adcs + n_pulses;
 
   uint32_t count = 0;
   constexpr static uint wtable_bits = 12;
@@ -100,6 +104,10 @@ private:
       adcs[1][i] = adcs[0][i];
       adcs[0][i] = (i < 2 ? AudioIn(i) : CVIn(i - 2)) >> noise_adcs;
     }
+    for (uint i = 0; i < n_pulses; i++) {
+      pulses[1][i] = pulses[0][i];
+      pulses[0][i] = PulseIn(i);
+    }
   }
 
   bool changed(uint idx) {
@@ -109,6 +117,8 @@ private:
     idx -= n_switches;
     if (idx < n_adcs) return adcs[0][idx] != adcs[1][idx];
     idx -= n_adcs;
+    if (idx < n_pulses) return pulses[0][idx] != pulses[1][idx];
+    idx -= n_pulses;
     return false;
   }
 
@@ -149,6 +159,12 @@ private:
       LedOn(idx);  // swap audio l/r
       return;
     }
+    idx -= n_adcs;
+    if (idx < n_pulses) {
+      LedOn(idx + 4);
+      return;
+    }
+    idx -= n_pulses;
   }
 
   void display(uint idx) {
@@ -169,7 +185,20 @@ private:
     if (idx < n_adcs) {
       columns12bits(idx < 2 ? AudioIn(idx) : CVIn(idx - 2));
     }
+    idx -= n_adcs;
+    if (idx < n_pulses) {
+      for (uint i = 0; i < n_leds; i++) {
+        if (i == idx || i == idx + 4) LedOn(i);
+        else LedOff(i);
+      }
+      return;
+    }
+    idx -= n_pulses;
     return;
+  }
+
+  bool pulse(uint n) {
+    return (count & (1 << n)) && ! ((count - 1) & (1 << n));
   }
 
   void write_out() {
@@ -178,14 +207,22 @@ private:
       if (i < 2) AudioOut(i, wtable[idx]);
       else CVOut(i - 2, wtable[idx]);
     }
+    PulseOut(0, pulse(11));;
+    PulseOut(1, !pulse(12));
     count++;
+  }
+
+  int delay(uint prev_change) {
+    if (prev_change == n_knobs) return 30000;  // switch
+    if (prev_change == n_all - 1) return 100;  // pulse
+    return 2000;  // default
   }
 
   virtual void ProcessSample() {
     write_out();
     save_current();
     if (prev_change != NONE && ((recent-- > 0) || changed(prev_change))) {
-      if (changed(prev_change)) recent = (prev_change == n_knobs) ? 30000 : 2000;
+      if (changed(prev_change)) recent = delay(prev_change);
       display(prev_change);
     } else {
       uint current_change = next_change(prev_change);
