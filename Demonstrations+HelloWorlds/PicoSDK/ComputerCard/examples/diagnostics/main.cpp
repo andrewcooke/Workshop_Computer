@@ -71,13 +71,13 @@ private:
   uint prev_change = NONE;
   int32_t recent = 0;
 
-  constexpr static uint noise_knobs = 3;
+  constexpr static uint noise_knobs = 4;
   constexpr static uint n_knobs = 3;
   uint32_t knobs[2][n_knobs] = {};
   constexpr static uint noise_switches = 0;
   constexpr static uint n_switches = 1;
   uint32_t switches[2][n_switches] = {};
-  constexpr static uint noise_adcs = 6;
+  constexpr static uint noise_adcs = 7;
   constexpr static uint n_adcs = 4;
   uint32_t adcs[2][n_adcs] = {};
   constexpr static uint noise_pulses = 0;
@@ -227,7 +227,10 @@ private:
     } else {
       uint current_change = next_change(prev_change);
       if (current_change == NONE && prev_change != NONE) identify(prev_change);
-      if (current_change != NONE) prev_change = current_change;
+      if (current_change != NONE) {
+        prev_change = current_change;
+        recent = delay(prev_change);
+      }
     }
   }
 
