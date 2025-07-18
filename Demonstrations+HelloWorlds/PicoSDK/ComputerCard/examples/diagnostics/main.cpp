@@ -10,13 +10,13 @@ public:
 
 private:
 
-  constexpr static uint num_leds = 6;  // should be exposed by parent
+  constexpr static uint n_leds = 6;  // should be exposed by parent
 
   // i'm a sucker for flashing lights
   
   void column10levels(const bool up, const uint c, uint8_t v) {
     v = std::min(static_cast<uint8_t>(9), v);
-    for (uint i = 0; i < num_leds / 2; i++) {
+    for (uint i = 0; i < n_leds / 2; i++) {
       uint led = up ? 4 + (c & 0x1) - 2 * i : (c & 0x1) + 2 * i;
       LedBrightness(led, static_cast<uint16_t>(std::min(static_cast<uint8_t>(3), v) << 10));
       v = v > 3 ? v - 3 : 0;
@@ -27,7 +27,7 @@ private:
     column10levels(true, c, v);
   }
   
-  void columns12bits(uint32_t v) {
+  void columns12bits(uint16_t v) {
     v = v & 0x0fff;
     uint8_t v1 = v / 409;
     uint8_t v2 = (v % 409) / 41;
@@ -35,7 +35,7 @@ private:
     column10levels(1, v2);
   }
   
-  void columns12bits(int32_t v) {
+  void columns12bits(int16_t v) {
     if (v >= 0) {
       columns11bits(true, v);
     } else {
@@ -55,13 +55,13 @@ private:
     v = std::min(static_cast<uint8_t>(12), v);
     bool inv = v > 5;
     if (inv) v -= 5;
-    for (uint i = 0; i  < num_leds; i++) {
+    for (uint i = 0; i  < n_leds; i++) {
       LedBrightness(inv ? 5 - i : i, (i == v ? 4095 : (inv ? 1024 : 0)));
     }
   }
 
   void display3levels(uint8_t v) {
-    for (uint i = 0; i < num_leds; i++) {
+    for (uint i = 0; i < n_leds; i++) {
       LedBrightness(i, v == i / 2 ? 4095 : 0);
     }
   }
@@ -74,16 +74,23 @@ private:
   constexpr static uint NOISE_KNOBS = 3;
   constexpr static uint n_knobs = 3;
   uint32_t knobs[2][n_knobs] = {};
+  constexpr static uint NOISE_SWITCH = 0;
+  constexpr static uint n_switches = 1;
+  uint32_t switches[2][n_switches] = {};
   constexpr static uint NOISE_ADC = 6;
   constexpr static uint n_adc = 4;
   uint32_t adcs[2][n_adc] = {};
-  constexpr static uint n_all = n_knobs + n_adc;
+  constexpr static uint n_all = n_knobs + n_switches + n_adc;
 
   void save_current() {
     for (uint i = 0; i < n_knobs; i++) {
       knobs[1][i] = knobs[0][i];
+      // for some reason knob values are signed integers, but we
+      // need to display unsigned so cast here
       knobs[0][i] = KnobVal(static_cast<Knob>(i)) >> NOISE_KNOBS;
     }
+    switches[1][0] = switches[0][0];
+    switches[0][0] = SwitchVal();
     for (uint i = 0; i < n_adc; i++) {
       adcs[1][i] = adcs[0][i];
       adcs[0][i] = (i < 2 ? AudioIn(i) : CVIn(i-2)) >> NOISE_ADC;
@@ -93,6 +100,8 @@ private:
   bool changed(uint idx) {
     if (idx < n_knobs) return knobs[0][idx] != knobs[1][idx];
     idx -= n_knobs;
+    if (idx < n_switches) return switches[0][idx] != switches[1][idx];
+    idx -= n_switches;
     if (idx < n_adc) return adcs[0][idx] != adcs[1][idx];
     idx -= n_adc;
     return false;
@@ -109,7 +118,7 @@ private:
   }
 
   void identify(uint idx) {
-    for (uint i = 0; i < num_leds; i++) LedBrightness(i, 1024);
+    for (uint i = 0; i < n_leds; i++) LedBrightness(i, 1024);
     if (idx < n_knobs) {
       switch(idx) {
       case static_cast<uint>(Main):
@@ -125,6 +134,12 @@ private:
       }
     }
     idx -= n_knobs;
+    if (idx < n_switches) {
+      LedOn(3);
+      LedOn(5);
+      return;
+    }
+    idx -= n_switches;
     if (idx < n_adc) {
       LedOn(idx);  // swap audio l/r
       return;
@@ -133,12 +148,21 @@ private:
 
   void display(uint idx) {
     if (idx < n_knobs) {
-      columns12bits(KnobVal(static_cast<Knob>(idx)));
+      columns12bits(static_cast<uint16_t>(KnobVal(static_cast<Knob>(idx))));
       return;
     }
     idx -= n_knobs;
+    if (idx < n_switches) {
+      uint led = 2 - static_cast<uint>(SwitchVal());
+      for (uint i = 0; i < n_leds; i++) {
+        if (i == 2 * led || i == 2 * led + 1) LedOn(i);
+        else LedOff(i);
+      }
+      return;
+    }
+    idx -= n_switches;
     if (idx < n_adc) {
-      columns12bits(static_cast<int32_t>(idx < 2 ? AudioIn(idx) : CVIn(idx - 2)));
+      columns12bits(idx < 2 ? AudioIn(idx) : CVIn(idx - 2));
     }
     return;
   }
@@ -146,7 +170,7 @@ private:
   virtual void ProcessSample() {
     save_current();
     if (prev_change != NONE && ((recent-- > 0) || changed(prev_change))) {
-      if (changed(prev_change)) recent = 1000;
+      if (changed(prev_change)) recent = (prev_change == n_knobs) ? 30000 : 2000;
       display(prev_change);
     } else {
       uint current_change = next_change(prev_change);
