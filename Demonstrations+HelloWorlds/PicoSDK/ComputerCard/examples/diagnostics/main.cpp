@@ -1,12 +1,11 @@
 
 #include <algorithm>
+#include <cmath>
 
 #include "ComputerCard.h"
 
 
 class Diagnostics : public ComputerCard {
-
-public:
 
 private:
 
@@ -71,29 +70,35 @@ private:
   constexpr static uint NONE = 999;
   uint prev_change = NONE;
   int32_t recent = 0;
-  constexpr static uint NOISE_KNOBS = 3;
+
+  constexpr static uint noise_knobs = 3;
   constexpr static uint n_knobs = 3;
   uint32_t knobs[2][n_knobs] = {};
-  constexpr static uint NOISE_SWITCH = 0;
+  constexpr static uint noise_switches = 0;
   constexpr static uint n_switches = 1;
   uint32_t switches[2][n_switches] = {};
-  constexpr static uint NOISE_ADC = 6;
-  constexpr static uint n_adc = 4;
-  uint32_t adcs[2][n_adc] = {};
-  constexpr static uint n_all = n_knobs + n_switches + n_adc;
+  constexpr static uint noise_adcs = 6;
+  constexpr static uint n_adcs = 4;
+  uint32_t adcs[2][n_adcs] = {};
+  constexpr static uint n_all = n_knobs + n_switches + n_adcs;
+
+  uint32_t count = 0;
+  constexpr static uint wtable_bits = 12;
+  constexpr static uint wtable_size = 1 << wtable_bits;
+  int16_t wtable[wtable_size] = {};
 
   void save_current() {
     for (uint i = 0; i < n_knobs; i++) {
       knobs[1][i] = knobs[0][i];
       // for some reason knob values are signed integers, but we
       // need to display unsigned so cast here
-      knobs[0][i] = KnobVal(static_cast<Knob>(i)) >> NOISE_KNOBS;
+      knobs[0][i] = KnobVal(static_cast<Knob>(i)) >> noise_knobs;
     }
     switches[1][0] = switches[0][0];
     switches[0][0] = SwitchVal();
-    for (uint i = 0; i < n_adc; i++) {
+    for (uint i = 0; i < n_adcs; i++) {
       adcs[1][i] = adcs[0][i];
-      adcs[0][i] = (i < 2 ? AudioIn(i) : CVIn(i-2)) >> NOISE_ADC;
+      adcs[0][i] = (i < 2 ? AudioIn(i) : CVIn(i - 2)) >> noise_adcs;
     }
   }
 
@@ -102,8 +107,8 @@ private:
     idx -= n_knobs;
     if (idx < n_switches) return switches[0][idx] != switches[1][idx];
     idx -= n_switches;
-    if (idx < n_adc) return adcs[0][idx] != adcs[1][idx];
-    idx -= n_adc;
+    if (idx < n_adcs) return adcs[0][idx] != adcs[1][idx];
+    idx -= n_adcs;
     return false;
   }
 
@@ -140,7 +145,7 @@ private:
       return;
     }
     idx -= n_switches;
-    if (idx < n_adc) {
+    if (idx < n_adcs) {
       LedOn(idx);  // swap audio l/r
       return;
     }
@@ -161,13 +166,23 @@ private:
       return;
     }
     idx -= n_switches;
-    if (idx < n_adc) {
+    if (idx < n_adcs) {
       columns12bits(idx < 2 ? AudioIn(idx) : CVIn(idx - 2));
     }
     return;
   }
 
+  void write_out() {
+    for (uint i = 0; i < 4; i++) {
+      uint idx = (count >> (i + 3)) & (wtable_size - 1);
+      if (i < 2) AudioOut(i, wtable[idx]);
+      else CVOut(i - 2, wtable[idx]);
+    }
+    count++;
+  }
+
   virtual void ProcessSample() {
+    write_out();
     save_current();
     if (prev_change != NONE && ((recent-- > 0) || changed(prev_change))) {
       if (changed(prev_change)) recent = (prev_change == n_knobs) ? 30000 : 2000;
@@ -177,6 +192,12 @@ private:
       if (current_change == NONE && prev_change != NONE) identify(prev_change);
       if (current_change != NONE) prev_change = current_change;
     }
+  }
+
+public:
+
+  Diagnostics() {
+    for (uint i = 0; i < wtable_size; i++) wtable[i] = static_cast<int16_t>(2047 * sin(2 * M_PI * i / wtable_size));
   }
 
 };
