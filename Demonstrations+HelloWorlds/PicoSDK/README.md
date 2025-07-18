@@ -10,9 +10,9 @@ Either
 
     git clone https://github.com/TomWhitwell/Workshop_Computer.git
 
-or
+or (if you've forked to your own account)
 
-    git clone https://github.com/andrewcooke/Workshop_Computer.git
+    git clone https://github.com/USER/Workshop_Computer.git
 
 then
 

@@ -59,3 +59,6 @@ target_sources(midi_device_host PUBLIC
   ${CMAKE_CURRENT_LIST_DIR}/examples/midi_device_host/usb_midi_host_app_driver.c
   ${CMAKE_CURRENT_LIST_DIR}/examples/midi_device_host/usb_descriptors.c
 )
+
+
+add_example(diagnostics)
