@@ -10,15 +10,15 @@ public:
 
 private:
 
-  constexpr static uint numLeds = 6;  // should be exposed by parent
+  constexpr static uint num_leds = 6;  // should be exposed by parent
 
   // i'm a sucker for flashing lights
   
   void column10levels(const bool up, const uint c, uint8_t v) {
     v = std::min(static_cast<uint8_t>(9), v);
-    for (uint i = 0; i < numLeds / 2; i++) {
+    for (uint i = 0; i < num_leds / 2; i++) {
       uint led = up ? 4 + (c & 0x1) - 2 * i : (c & 0x1) + 2 * i;
-      LedBrightness(led, static_cast<uint8_t>(std::min(static_cast<uint8_t>(3), v) << 6));
+      LedBrightness(led, static_cast<uint16_t>(std::min(static_cast<uint8_t>(3), v) << 10));
       v = v > 3 ? v - 3 : 0;
     }
   }
@@ -55,45 +55,83 @@ private:
     v = std::min(static_cast<uint8_t>(12), v);
     bool inv = v > 5;
     if (inv) v -= 5;
-    for (uint i = 0; i  < numLeds; i++) {
+    for (uint i = 0; i  < num_leds; i++) {
       LedBrightness(inv ? 5 - i : i, (i == v ? 4095 : (inv ? 1024 : 0)));
     }
   }
 
   void display3levels(uint8_t v) {
-    for (uint i = 0; i < numLeds; i++) {
+    for (uint i = 0; i < num_leds; i++) {
       LedBrightness(i, v == i / 2 ? 4095 : 0);
     }
   }
 
-  uint hold = 0;
-  uint prev_main = 0;
-  uint sel = -1;
+  constexpr static uint NONE = 999;
+  constexpr static uint NOISE = 2;
+  uint prev_change = NONE;
+  int32_t recent = 0;
+  constexpr static uint n_knobs = 3;
+  uint32_t knobs[2][n_knobs] = {};
+
+  void save_current() {
+    for (uint i = 0; i < n_knobs; i++) {
+      knobs[1][i] = knobs[0][i];
+      knobs[0][i] = KnobVal(static_cast<Knob>(i)) >> NOISE;
+    }
+  }
+
+  bool changed(uint idx) {
+    if (idx < n_knobs) return knobs[0][idx] != knobs[1][idx];
+    return false;
+  }
+
+  uint next_change(uint old_idx) {
+    uint new_idx = old_idx == NONE ? 0 : old_idx + 1;
+    for (uint i = 0; i < n_knobs; i++) {
+      if (new_idx == n_knobs) new_idx = 0;
+      if (changed(new_idx)) return new_idx;
+      new_idx++;
+    }
+    return NONE;
+  }
+
+  void identify(uint idx) {
+    for (uint i = 0; i < num_leds; i++) LedBrightness(i, 1024);
+    switch (idx) {
+    case static_cast<uint>(Main):
+      for (uint i = 0; i < 4; i++) LedOn(i);
+      return;
+    case static_cast<uint>(X):
+      LedOn(2);
+      LedOn(4);
+      return;
+    case static_cast<uint>(Y):
+      for (uint i = 2; i < 6; i++) LedOn(i);
+      return;
+    }
+  }
+
+  void display(uint idx) {
+    if (idx < n_knobs) {
+      columns12bits(KnobVal(static_cast<Knob>(idx)));
+    }
+    return;
+  }
 
   virtual void ProcessSample() {
-    uint main = KnobVal(Main);
-    if (prev_main != main) {
-      prev_main = main;
-      sel = main / 456;
-      display12levels(sel);
-      hold = 48000;
-    } else if (hold > 0) {
-      hold--;
+    save_current();
+    if (prev_change != NONE && ((recent-- > 0) || changed(prev_change))) {
+      if (changed(prev_change)) recent = 1000;
+      display(prev_change);
     } else {
-      switch(sel) {
-        case 0:
-          columns12bits(KnobVal(X));
-          break;
-        case 1:
-          columns12bits(KnobVal(Y));
-          break;
-        case 3:
-          display3levels(SwitchVal());
-          break;
-      }
+      uint current_change = next_change(prev_change);
+      if (current_change == NONE && prev_change != NONE) identify(prev_change);
+      if (current_change != NONE) prev_change = current_change;
     }
-	}
+  }
+
 };
+
 
 int main()
 {
