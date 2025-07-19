@@ -40,7 +40,7 @@ These are obvious because the expected output is not seen.
 
 These are more annoying because they generate signal even when you are
 not doing anything.  Generally the source can be identified from the
-LEDs (when the nois pauses the LEDs identify the source - see
+LEDs (when the noise pauses the LEDs identify the source - see
 descriptions above).
 
 
